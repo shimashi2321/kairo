@@ -181,7 +181,8 @@
   const UNITS = {
     E:'V', I:'A', I1:'A', I2:'A', R1:'&#937;', R2:'&#937;', V1:'V', V2:'V',
     R:'&#937;', X:'&#937;', Z:'&#937;', VR:'V', VX:'V',
-    W1:'W', W2:'W', W:'W', IR:'A', IX:'A', PF:'%'
+    W1:'W', W2:'W', W:'W', IR:'A', IX:'A', PF:'%',
+    Vline:'V', Vphase:'V', Iphase:'A', Iline:'A'
   };
   const FIELD_META = {
     I1:{label:'I&#8321;', unit:'A'},
@@ -202,7 +203,11 @@
     W:{label:'W', unit:'W'},
     IR:{label:'I<sub>R</sub>', unit:'A'},
     IX:{label:'I<sub>X</sub>', unit:'A'},
-    PF:{label:'cosθ(力率)', unit:'%'}
+    PF:{label:'cosθ(力率)', unit:'%'},
+    Vline:{label:'V<sub>L</sub>', unit:'V'},
+    Vphase:{label:'V<sub>P</sub>', unit:'V'},
+    Iphase:{label:'I<sub>P</sub>', unit:'A'},
+    Iline:{label:'I<sub>L</sub>', unit:'A'}
   };
 
   function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
@@ -762,7 +767,198 @@
     }
   };
 
-  const SPECS = { series: SERIES, parallel: PARALLEL, ac: AC, acp: AC_PARALLEL };
+  // ---------- Three-phase Delta (Δ) ----------
+  const DELTA_R = [2,4,5,8,10,16,20,25,40,50];
+  const DELTA_VL = [100,200,400];
+
+  const DELTA3P = {
+    typeName:'三相3線式・Δ結線', shortName:'三相回路(Δ結線)',
+    labels: {Vline:'線間電圧(=相電圧)', R:'各相の抵抗(平衡)'},
+    templates: [
+      { id:'W', name:'全消費電力(W)を求める', given:['Vline','R'], ask:['Iphase','Iline','W'] }
+    ],
+    explain: {
+      W:{
+        Iphase: v=>`Δ結線では線間電圧と相電圧が等しいので、I<sub>P</sub> = V<sub>L</sub> ÷ R = ${v.Vline} ÷ ${v.R} = ${v.Iphase}A です。`,
+        Iline: v=>`Δ結線の線電流は相電流の√3倍になるので、I<sub>L</sub> = √3 × I<sub>P</sub> ≈ 1.732 × ${v.Iphase} ≈ ${v.Iline}A です。`,
+        W: v=>`全消費電力は W = 3 × V<sub>L</sub> × I<sub>P</sub> = 3 × ${v.Vline} × ${v.Iphase} = ${v.W}W(= ${v.W/1000}kW)です。`
+      }
+    },
+    gen(){
+      for(let attempt=0; attempt<200; attempt++){
+        const R = pick(DELTA_R);
+        const Vline = pick(DELTA_VL);
+        if(Vline % R === 0){
+          const Iphase = Vline / R;
+          const Iline = Math.round(Iphase*Math.sqrt(3)*100)/100;
+          const W = 3*Vline*Iphase;
+          return { Vline, R, Iphase, Iline, W };
+        }
+      }
+      return { Vline:200, R:10, Iphase:20, Iline:34.64, W:12000 };
+    },
+    siblings(field, v){
+      switch(field){
+        case 'Iphase': return [v.Iline];
+        case 'Iline': return [v.Iphase];
+        case 'W': return uniqPositive([Math.round(v.Vline*v.Iphase), Math.round(v.Vline*v.Iline)]);
+        default: return [];
+      }
+    },
+    renderSvg(svg, template, v){
+      const disp = (k,u) => template.given.includes(k) ? v[k]+u : (template.ask.includes(k) ? '?' : '');
+      svg.setAttribute('viewBox','0 0 620 340');
+      svg.innerHTML = `
+        <text x="30" y="55" font-size="13" font-weight="700" fill="var(--muted)">&#19977;&#30456;3&#32218;&#24335;&#65288;&#916;&#22238;&#36335;&#65289;</text>
+
+        <line x1="15" y1="80" x2="15" y2="180" stroke="var(--ink)" stroke-width="1.5"/>
+        <line x1="10" y1="80" x2="20" y2="80" stroke="var(--ink)" stroke-width="1.5"/>
+        <line x1="10" y1="180" x2="20" y2="180" stroke="var(--ink)" stroke-width="1.5"/>
+        <text x="22" y="134" font-size="12" font-weight="700" fill="var(--muted)">V<tspan baseline-shift="sub" font-size="8">L</tspan>=${disp('Vline','V')}</text>
+
+        <line x1="15" y1="180" x2="15" y2="280" stroke="var(--ink)" stroke-width="1.5"/>
+        <line x1="10" y1="280" x2="20" y2="280" stroke="var(--ink)" stroke-width="1.5"/>
+        <text x="22" y="234" font-size="12" font-weight="700" fill="var(--muted)">V<tspan baseline-shift="sub" font-size="8">L</tspan>=${disp('Vline','V')}</text>
+
+        <text x="55" y="75" font-size="15" font-weight="700" fill="var(--red)">R</text>
+        <circle cx="60" cy="80" r="3" fill="var(--red)"/>
+        <text x="55" y="175" font-size="15" font-weight="700" fill="var(--blue)">S</text>
+        <circle cx="60" cy="180" r="3" fill="var(--blue)"/>
+        <text x="55" y="275" font-size="15" font-weight="700" fill="var(--ink)">T</text>
+        <circle cx="60" cy="280" r="3" fill="var(--ink)"/>
+
+        <line x1="60" y1="80" x2="380" y2="80" stroke="var(--red)" stroke-width="2.5"/>
+        <line x1="60" y1="180" x2="250" y2="180" stroke="var(--blue)" stroke-width="2.5"/>
+        <line x1="250" y1="180" x2="300" y2="220" stroke="var(--blue)" stroke-width="2.5"/>
+        <line x1="60" y1="280" x2="460" y2="280" stroke="var(--ink)" stroke-width="2.5"/>
+        <line x1="460" y1="280" x2="460" y2="220" stroke="var(--ink)" stroke-width="2.5"/>
+
+        <text x="140" y="70" font-size="12" font-weight="700" fill="var(--muted)">&#32218;&#38291;&#38651;&#22311;</text>
+        <text x="150" y="97" font-size="12" font-weight="700" fill="var(--red)">&#32218;&#38651;&#27969; I<tspan baseline-shift="sub" font-size="8">L</tspan>=${disp('Iline','A')}</text>
+        <line x1="150" y1="80" x2="200" y2="80" stroke="var(--red)" stroke-width="2" marker-end="url(#arrowRed)"/>
+
+        <line x1="300" y1="220" x2="380" y2="80" stroke="var(--wire)" stroke-width="3"/>
+        <line x1="380" y1="80" x2="460" y2="220" stroke="var(--wire)" stroke-width="3"/>
+        <line x1="300" y1="220" x2="460" y2="220" stroke="var(--wire)" stroke-width="3"/>
+
+        <text x="325" y="150" font-size="13" font-weight="700" fill="var(--ink)">R=${disp('R','&#937;')}</text>
+        <text x="420" y="150" font-size="13" font-weight="700" fill="var(--ink)">R=${disp('R','&#937;')}</text>
+        <text x="380" y="240" font-size="13" font-weight="700" text-anchor="middle" fill="var(--ink)">R=${disp('R','&#937;')}</text>
+
+        <text x="405" y="115" font-size="12" font-weight="700" fill="var(--blue)">&#30456;&#38651;&#22311;</text>
+        <text x="405" y="130" font-size="12" font-weight="700" fill="var(--blue)">V<tspan baseline-shift="sub" font-size="8">P</tspan>=${disp('Vline','V')}</text>
+        <text x="330" y="185" font-size="12" font-weight="700" fill="var(--red)">&#30456;&#38651;&#27969;</text>
+        <text x="325" y="200" font-size="12" font-weight="700" fill="var(--red)">I<tspan baseline-shift="sub" font-size="8">P</tspan>=${disp('Iphase','A')}</text>
+
+        <defs>
+          <marker id="arrowRed" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--red)"/></marker>
+          <marker id="arrowBlue" markerWidth="8" markerHeight="8" refX="4" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--blue)"/></marker>
+        </defs>
+      `;
+    }
+  };
+
+  // ---------- Three-phase Star (Y) ----------
+  const STAR_R = [5,8,10,20,25,40,50,80,100];
+  const STAR_VL = [100,200,400];
+
+  const STAR3P = {
+    typeName:'三相3線式・Y結線', shortName:'三相回路(Y結線)',
+    labels: {Vline:'線間電圧', I:'線電流(=相電流)', R:'各相の抵抗(平衡)'},
+    templates: [
+      { id:'I', name:'電流(I)を求める',       given:['Vline','R'], ask:['Vphase','I','W'] },
+      { id:'V', name:'線間電圧(V)をマスク',   given:['I','R'],     ask:['Vphase','Vline','W'] }
+    ],
+    explain: {
+      I:{
+        Vphase: v=>`Y結線では相電圧は線間電圧の1/√3倍になるので、V<sub>P</sub> = V<sub>L</sub> ÷ √3 ≈ ${v.Vline} ÷ 1.732 ≈ ${v.Vphase}V です。`,
+        I: v=>`オームの法則より I = V<sub>P</sub> ÷ R ≈ ${v.Vphase} ÷ ${v.R} ≈ ${v.I}A です。(Y結線では線電流と相電流は同じ値です)`,
+        W: v=>`全消費電力は W = V<sub>L</sub>² ÷ R = ${v.Vline}² ÷ ${v.R} = ${v.W}W(= ${v.W/1000}kW)です。(3×V<sub>P</sub>×Iと同じ値です)`
+      },
+      V:{
+        Vphase: v=>`オームの法則より V<sub>P</sub> = I × R = ${v.I} × ${v.R} = ${v.Vphase}V です。`,
+        Vline: v=>`Y結線では線間電圧は相電圧の√3倍になるので、V<sub>L</sub> = √3 × V<sub>P</sub> ≈ 1.732 × ${v.Vphase} ≈ ${v.Vline}V です。`,
+        W: v=>`全消費電力は W = 3 × I² × R = 3 × ${v.I}² × ${v.R} ≈ ${v.W}W(≈ ${Math.round(v.W/10)/100}kW)です。`
+      }
+    },
+    gen(){
+      for(let attempt=0; attempt<200; attempt++){
+        const R = pick(STAR_R);
+        const Vline = pick(STAR_VL);
+        if((Vline*Vline) % R === 0){
+          const Vphase = Math.round((Vline/Math.sqrt(3))*100)/100;
+          const I = Math.round((Vline/(Math.sqrt(3)*R))*100)/100;
+          const W = (Vline*Vline)/R;
+          return { Vline, R, Vphase, I, W };
+        }
+      }
+      return { Vline:200, R:20, Vphase:115.47, I:5.77, W:2000 };
+    },
+    siblings(field, v){
+      switch(field){
+        case 'Vphase': return [v.Vline];
+        case 'Vline': return uniqPositive([v.Vphase, Math.round(v.Vphase*3*100)/100]);
+        case 'I': return uniqPositive([Math.round((v.Vline/v.R)*100)/100]);
+        case 'W': return uniqPositive([Math.round((v.Vline*v.Vline)/(3*v.R)), Math.round((v.Vphase*v.Vphase)/v.R)]);
+        default: return [];
+      }
+    },
+    renderSvg(svg, template, v){
+      const disp = (k,u) => template.given.includes(k) ? v[k]+u : (template.ask.includes(k) ? '?' : '');
+      const showI = template.given.includes('I') || template.ask.includes('I');
+      const iLabel = showI ? disp('I','A') : '';
+      svg.setAttribute('viewBox','0 0 620 340');
+      svg.innerHTML = `
+        <text x="30" y="55" font-size="13" font-weight="700" fill="var(--muted)">&#19977;&#30456;3&#32218;&#24335;&#65288;Y&#22238;&#36335;&#65289;</text>
+
+        <line x1="15" y1="80" x2="15" y2="180" stroke="var(--ink)" stroke-width="1.5"/>
+        <line x1="10" y1="80" x2="20" y2="80" stroke="var(--ink)" stroke-width="1.5"/>
+        <line x1="10" y1="180" x2="20" y2="180" stroke="var(--ink)" stroke-width="1.5"/>
+        <text x="22" y="134" font-size="12" font-weight="700" fill="var(--muted)">V<tspan baseline-shift="sub" font-size="8">L</tspan>=${disp('Vline','V')}</text>
+
+        <line x1="15" y1="180" x2="15" y2="280" stroke="var(--ink)" stroke-width="1.5"/>
+        <line x1="10" y1="280" x2="20" y2="280" stroke="var(--ink)" stroke-width="1.5"/>
+        <text x="22" y="234" font-size="12" font-weight="700" fill="var(--muted)">V<tspan baseline-shift="sub" font-size="8">L</tspan>=${disp('Vline','V')}</text>
+
+        <text x="55" y="75" font-size="15" font-weight="700" fill="var(--red)">R</text>
+        <circle cx="60" cy="80" r="3" fill="var(--red)"/>
+        <text x="55" y="175" font-size="15" font-weight="700" fill="var(--blue)">S</text>
+        <circle cx="60" cy="180" r="3" fill="var(--blue)"/>
+        <text x="55" y="275" font-size="15" font-weight="700" fill="var(--ink)">T</text>
+        <circle cx="60" cy="280" r="3" fill="var(--ink)"/>
+
+        <line x1="60" y1="80" x2="410" y2="80" stroke="var(--red)" stroke-width="2.5"/>
+        <line x1="60" y1="180" x2="320" y2="180" stroke="var(--blue)" stroke-width="2.5"/>
+        <line x1="320" y1="180" x2="320" y2="230" stroke="var(--blue)" stroke-width="2.5"/>
+        <line x1="60" y1="280" x2="500" y2="280" stroke="var(--ink)" stroke-width="2.5"/>
+        <line x1="500" y1="280" x2="500" y2="230" stroke="var(--ink)" stroke-width="2.5"/>
+
+        <text x="140" y="70" font-size="12" font-weight="700" fill="var(--muted)">&#32218;&#38291;&#38651;&#22311;</text>
+        <text x="150" y="97" font-size="12" font-weight="700" fill="var(--red)">&#32218;&#38651;&#27969; I=${iLabel}</text>
+        <line x1="150" y1="80" x2="200" y2="80" stroke="var(--red)" stroke-width="2" marker-end="url(#arrowRed)"/>
+
+        <line x1="410" y1="80" x2="410" y2="160" stroke="var(--wire)" stroke-width="3"/>
+        <line x1="320" y1="230" x2="410" y2="160" stroke="var(--wire)" stroke-width="3"/>
+        <line x1="500" y1="230" x2="410" y2="160" stroke="var(--wire)" stroke-width="3"/>
+        <circle cx="410" cy="160" r="6" fill="var(--wire)"/>
+
+        <text x="425" y="125" font-size="13" font-weight="700" fill="var(--ink)">R=${disp('R','&#937;')}</text>
+        <text x="345" y="213" font-size="13" font-weight="700" text-anchor="end" fill="var(--ink)">R=${disp('R','&#937;')}</text>
+        <text x="440" y="215" font-size="13" font-weight="700" fill="var(--ink)">R=${disp('R','&#937;')}</text>
+
+        <text x="440" y="105" font-size="12" font-weight="700" fill="var(--blue)">&#30456;&#38651;&#22311;</text>
+        <text x="440" y="120" font-size="12" font-weight="700" fill="var(--blue)">V<tspan baseline-shift="sub" font-size="8">P</tspan>=${disp('Vphase','V')}</text>
+        <line x1="425" y1="88" x2="425" y2="155" stroke="var(--blue)" stroke-width="2" stroke-dasharray="3,3"/>
+
+        <defs>
+          <marker id="arrowRed" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--red)"/></marker>
+          <marker id="arrowBlue" markerWidth="8" markerHeight="8" refX="4" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--blue)"/></marker>
+        </defs>
+      `;
+    }
+  };
+
+  const SPECS = { series: SERIES, parallel: PARALLEL, ac: AC, acp: AC_PARALLEL, delta3p: DELTA3P, star3p: STAR3P };
 
   let circuitType = 'series';
   let selectedModeId = 'RANDOM';
