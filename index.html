@@ -773,6 +773,7 @@
 
   const DELTA3P = {
     typeName:'三相3線式・Δ結線', shortName:'三相回路(Δ結線)',
+    hints:['&#8730;2&#8776;1.4', '&#8730;3&#8776;1.7'],
     labels: {Vline:'線間電圧(=相電圧)', R:'各相の抵抗(平衡)'},
     templates: [
       { id:'W', name:'全消費電力(W)を求める', given:['Vline','R'], ask:['Iphase','Iline','W'] }
@@ -864,6 +865,7 @@
 
   const STAR3P = {
     typeName:'三相3線式・Y結線', shortName:'三相回路(Y結線)',
+    hints:['&#8730;2&#8776;1.4', '&#8730;3&#8776;1.7'],
     labels: {Vline:'線間電圧', I:'線電流(=相電流)', R:'各相の抵抗(平衡)'},
     templates: [
       { id:'I', name:'電流(I)を求める',       given:['Vline','R'], ask:['Vphase','I','W'] },
@@ -997,8 +999,11 @@
 
   function renderGiven(){
     const t = state.template, v = state.values, labels = spec().labels;
-    document.getElementById('givenValues').innerHTML =
-      t.given.map(k => `<span>${labels[k]} <b>${k}=${v[k]}${UNITS[k]}</b></span>`).join('');
+    let html = t.given.map(k => `<span>${labels[k]} <b>${k}=${v[k]}${UNITS[k]}</b></span>`).join('');
+    if(spec().hints){
+      html += spec().hints.map(h => `<span>${h}</span>`).join('');
+    }
+    document.getElementById('givenValues').innerHTML = html;
   }
 
   function renderQuestions(){
