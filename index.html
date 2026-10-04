@@ -95,6 +95,31 @@
   .mode-btn.active{border-color:var(--amber-dark);background:#FDF6E8;color:var(--ink);font-weight:700;}
 
   .diagram-wrap{margin:14px 0 6px;display:flex;justify-content:center;}
+  .solver{margin:6px 0 4px;padding:14px 14px 16px;border:1.5px dashed var(--amber-dark);border-radius:4px;background:#FFFBF0;}
+  .solver-title{font-family:"Shippori Mincho", serif;font-weight:700;font-size:15px;margin-bottom:2px;}
+  .solver-sub{font-size:12.5px;color:var(--muted);margin-bottom:8px;}
+  .chips{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;}
+  @media (min-width:560px){.chips{grid-template-columns:repeat(6,1fr);}}
+  .chip{border:1.5px solid var(--line);border-radius:4px;padding:10px 4px;background:#fff;font-size:15px;font-weight:500;color:var(--ink);cursor:pointer;font-variant-numeric:tabular-nums;}
+  .chip:hover{border-color:var(--amber);}
+  .chip.selected{border-color:var(--amber-dark);background:#FDF6E8;font-weight:700;}
+  .chip.correct{border-color:var(--good);background:var(--good-bg);color:var(--good);font-weight:700;}
+  .chip.wrong{border-color:var(--bad);background:var(--bad-bg);color:var(--bad);font-weight:700;}
+  .solver-group{margin-bottom:6px;}
+  .solver-label{font-size:13px;font-weight:700;margin-bottom:6px;}
+  .solver-group .chips{margin-bottom:8px;}
+  .solver-eq{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px 8px;}
+  .eq-item{display:flex;flex-direction:column;gap:3px;}
+  .eq-item small{font-size:11px;color:var(--muted);}
+  .slot{min-width:70px;min-height:40px;padding:8px 10px;border-bottom:2px solid var(--ink);background:#fff;font-size:17px;font-variant-numeric:tabular-nums;text-align:center;}
+  .slot.filled{background:#FDF6E8;font-weight:700;}
+  .eq-op{font-size:18px;padding-bottom:8px;}
+  .btn-ok{padding:9px 18px;margin-left:auto;}
+  .solver-msg{font-size:12.5px;margin-top:8px;min-height:1.3em;color:var(--muted);}
+  .problem-text{
+    margin:14px 0 8px;padding:14px 16px;font-size:15px;line-height:1.9;
+    background:#FAF7EF;border-left:4px solid var(--amber);border-radius:2px;
+  }
   svg{max-width:100%;height:auto;}
 
   .given{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;font-size:13.5px;margin:6px 0 22px;color:var(--muted);}
@@ -157,11 +182,14 @@
     <div class="type-picker" id="typePicker"></div>
     <div class="mode-picker" id="modePicker"></div>
 
+    <div class="problem-text" id="problemText" style="display:none"></div>
     <div class="diagram-wrap">
       <svg id="circuitSvg" viewBox="0 0 620 260" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>
 
     <div class="given" id="givenValues"></div>
+
+    <div class="solver" id="solver" style="display:none"></div>
 
     <div id="questionRows"></div>
 
@@ -207,7 +235,8 @@
     Vline:{label:'V<sub>L</sub>', unit:'V'},
     Vphase:{label:'V<sub>P</sub>', unit:'V'},
     Iphase:{label:'I<sub>P</sub>', unit:'A'},
-    Iline:{label:'I<sub>L</sub>', unit:'A'}
+    Iline:{label:'I<sub>L</sub>', unit:'A'},
+    Iallow:{label:'電線1本当たりの許容電流', unit:'A'}
   };
 
   function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
@@ -960,7 +989,84 @@
     }
   };
 
-  const SPECS = { series: SERIES, parallel: PARALLEL, ac: AC, acp: AC_PARALLEL, delta3p: DELTA3P, star3p: STAR3P };
+
+  // ---------- Allowable current (許容電流) ----------
+  const ALLOW_CABLE = [ {label:'2.0mm&sup2;', base:27}, {label:'3.5mm&sup2;', base:37}, {label:'5.5mm&sup2;', base:49} ];
+  const ALLOW_WIRE  = [ {label:'1.6mm', base:27}, {label:'2.0mm', base:35}, {label:'2.6mm', base:48} ];
+  const ALLOW_TIERS = [ {max:3, pct:70}, {max:4, pct:63}, {max:6, pct:56}, {max:8, pct:49} ];
+
+  const ALLOW = {
+    typeName:'許容電流計算', shortName:'許容電流',
+    noDiagram:true,
+    labels:{},
+    templates: [
+      { id:'ALLOW', name:'電線1本当たりの許容電流', given:[], ask:['Iallow'] }
+    ],
+    problemText(v){
+      const a = v.kind === 'cable'
+        ? `断面積${v.sizeLabel}の600Vビニル絶縁ビニルシースケーブル丸形（銅導体）`
+        : `直径${v.sizeLabel}の600Vビニル絶縁電線（軟銅線）`;
+      return `合成樹脂製可とう電線管（PF管）による低圧屋内配線工事で、管内に${a}${v.b}本を収めて施設した場合、電線1本当たりの許容電流［A］は？`;
+    },
+    explain: {
+      ALLOW:{
+        Iallow: v=>{
+          const name = v.kind === 'cable' ? '600Vビニル絶縁ビニルシースケーブル丸形(銅導体)' : '600Vビニル絶縁電線(軟銅線)';
+          const table = (v.kind === 'cable' ? ALLOW_CABLE : ALLOW_WIRE).map(x => `${x.label}=${x.base}A`).join(' / ');
+          return `${name} ${v.sizeLabel} の許容電流は${v.base}Aです。管内に${v.b}本なので電流減少係数は${v.coef}。<br>許容電流 = ${v.base} × ${v.coef} = ${v.raw}A → 小数点以下を切り捨てて <b>${v.Iallow}A</b> です。<br>(参考)${name}:${table}<br>(参考)電流減少係数:3本以下=0.70 / 4本=0.63 / 5〜6本=0.56 / 7〜8本=0.49`;
+        }
+      }
+    },
+    gen(){
+      const kind = Math.random() < 0.5 ? 'cable' : 'wire';
+      const item = pick(kind === 'cable' ? ALLOW_CABLE : ALLOW_WIRE);
+      const b = 1 + Math.floor(Math.random()*8);
+      const tierIdx = ALLOW_TIERS.findIndex(t => b <= t.max);
+      const pct = ALLOW_TIERS[tierIdx].pct;
+      const coef = (pct/100).toFixed(2);
+      const raw = Number((item.base*pct/100).toFixed(2));
+      const Iallow = Math.floor((item.base*pct)/100);
+      return { kind, sizeLabel:item.label, base:item.base, b, tierIdx, pct, coef, raw, Iallow };
+    },
+    distractors(field, correct, v){
+      const out = [v.base, correct+1];
+      const rest = [];
+      [v.tierIdx-1, v.tierIdx+1].forEach(i => {
+        if(i >= 0 && i < ALLOW_TIERS.length) rest.push(Math.floor((v.base*ALLOW_TIERS[i].pct)/100));
+      });
+      (v.kind === 'cable' ? ALLOW_CABLE : ALLOW_WIRE).filter(x => x.base !== v.base)
+        .forEach(x => rest.push(Math.floor((x.base*v.pct)/100)));
+      return out.concat(shuffle(rest));
+    },
+    siblings(){ return []; },
+    solver:{
+      title:'解法欄',
+      sub:'電流減少係数と許容電流をそれぞれ選ぶと、掛け算が自動で計算されます。',
+      groups:[
+        {
+          label:'電流減少係数',
+          fmt(p){ return (p/100).toFixed(2); },
+          correct(v){ return v.pct; },
+          options(v){
+            const near = { 70:[60,65,68,72,75], 63:[58,60,65,66,68], 56:[50,52,54,58,60], 49:[40,43,45,47,52] };
+            return [v.pct].concat(near[v.pct]).sort((a,b) => a - b);
+          }
+        },
+        {
+          label:'許容電流',
+          fmt(x){ return x + 'A'; },
+          correct(v){ return v.base; },
+          options(v){ return [v.base, 25, 28, 38, 46, 34].sort((a,b) => a - b); }
+        }
+      ],
+      calc(sel){
+        const pct = sel[0], base = sel[1];
+        return { raw: Number((base*pct/100).toFixed(2)), result: Math.floor((base*pct)/100) };
+      }
+    }
+  };
+
+  const SPECS = { series: SERIES, parallel: PARALLEL, ac: AC, acp: AC_PARALLEL, delta3p: DELTA3P, star3p: STAR3P, allow: ALLOW };
 
   let circuitType = 'series';
   let selectedModeId = 'RANDOM';
@@ -970,7 +1076,15 @@
   function spec(){ return SPECS[circuitType]; }
 
   function buildOptions(field, correct, v){
-    const wrongs = numericDistractors(correct, spec().siblings(field, v));
+    const s = spec();
+    let wrongs = [];
+    if(s.distractors){
+      wrongs = Array.from(new Set(s.distractors(field, correct, v).filter(x => x > 0 && x !== correct))).slice(0,3);
+    }
+    if(wrongs.length < 3){
+      const extra = numericDistractors(correct, s.siblings(field, v)).filter(x => !wrongs.includes(x));
+      wrongs = wrongs.concat(extra).slice(0,3);
+    }
     return shuffle([correct, ...wrongs]);
   }
 
@@ -984,17 +1098,101 @@
     const options = {};
     template.ask.forEach(f => { options[f] = buildOptions(f, values[f], values); });
 
-    state = { template, values, options, checked:false };
+    state = { template, values, options, checked:false, solverOpts: s.solver ? s.solver.groups.map(g => g.options(values)) : null, solverSel: s.solver ? s.solver.groups.map(() => null) : null };
     render();
   }
 
   function render(){
     document.getElementById('modeTag').textContent = spec().typeName + '・' + state.template.name;
-    spec().renderSvg(document.getElementById('circuitSvg'), state.template, state.values);
+    const pt = document.getElementById('problemText');
+    if(spec().problemText){ pt.innerHTML = spec().problemText(state.values); pt.style.display = 'block'; }
+    else { pt.style.display = 'none'; }
+    document.querySelector('.diagram-wrap').style.display = spec().noDiagram ? 'none' : '';
+    if(spec().renderSvg) spec().renderSvg(document.getElementById('circuitSvg'), state.template, state.values);
     renderGiven();
+    renderSolver();
     renderQuestions();
     const banner = document.getElementById('resultBanner');
     banner.classList.remove('show','all-good','has-bad');
+  }
+
+  function renderSolver(){
+    const box = document.getElementById('solver');
+    const sv = spec().solver;
+    if(!sv){ box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    const v = state.values;
+    const groupsHtml = sv.groups.map((g, gi) => `
+      <div class="solver-group">
+        <div class="solver-label">${g.label}を選ぶ</div>
+        <div class="chips" data-g="${gi}">
+          ${state.solverOpts[gi].map(o => `<button type="button" class="chip" data-v="${o}">${g.fmt(o)}</button>`).join('')}
+        </div>
+      </div>`).join('');
+    box.innerHTML = `
+      <div class="solver-title">${sv.title}</div>
+      <div class="solver-sub">${sv.sub}</div>
+      ${groupsHtml}
+      <div class="solver-eq">
+        <div class="eq-item"><small>${sv.groups[0].label}</small><div class="slot" id="slot0">［　］</div></div>
+        <span class="eq-op">×</span>
+        <div class="eq-item"><small>${sv.groups[1].label}</small><div class="slot" id="slot1">［　］</div></div>
+        <span class="eq-op">=</span>
+        <div class="eq-item"><small>計算結果（小数点以下切り捨て）</small><div class="slot" id="slotResult">［　］</div></div>
+        <span class="eq-op">A</span>
+        <button type="button" class="btn-primary btn-ok" id="solverOk">OK</button>
+      </div>
+      <div class="solver-msg" id="solverMsg"></div>
+    `;
+    box.querySelectorAll('.chips').forEach(group => {
+      const gi = Number(group.dataset.g);
+      group.querySelectorAll('.chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          if(state.checked) return;
+          state.solverSel[gi] = Number(chip.dataset.v);
+          group.querySelectorAll('.chip').forEach(x => x.classList.remove('selected'));
+          chip.classList.add('selected');
+          const slot = document.getElementById('slot' + gi);
+          slot.textContent = sv.groups[gi].fmt(state.solverSel[gi]);
+          slot.classList.add('filled');
+          if(state.solverSel.every(x => x !== null)){
+            const r = sv.calc(state.solverSel, v);
+            const sr = document.getElementById('slotResult');
+            sr.textContent = `${r.raw} → ${r.result}`;
+            sr.classList.add('filled');
+          }
+          document.getElementById('solverMsg').textContent = '';
+        });
+      });
+    });
+    document.getElementById('solverOk').addEventListener('click', () => {
+      if(state.checked) return;
+      const msg = document.getElementById('solverMsg');
+      if(state.solverSel.some(x => x === null)){ msg.textContent = '電流減少係数と許容電流の両方を選んでください。'; return; }
+      const res = sv.calc(state.solverSel, v).result;
+      const radio = document.querySelector(`.qrow input[value="${res}"]`);
+      if(radio){
+        radio.closest('.choice').click();
+        msg.textContent = `答えの選択肢「${res}A」を選びました。`;
+      } else {
+        msg.textContent = `${res}A は答えの選択肢にありません。係数や許容電流の選び直しを確認してください。`;
+      }
+    });
+  }
+
+  function markSolver(){
+    const sv = spec().solver;
+    if(!sv) return;
+    document.querySelectorAll('#solver .chips').forEach(group => {
+      const gi = Number(group.dataset.g);
+      const correct = sv.groups[gi].correct(state.values);
+      group.querySelectorAll('.chip').forEach(chip => {
+        const val = Number(chip.dataset.v);
+        chip.classList.remove('selected');
+        if(val === correct) chip.classList.add('correct');
+        else if(val === state.solverSel[gi]) chip.classList.add('wrong');
+      });
+    });
   }
 
   function renderGiven(){
@@ -1077,6 +1275,7 @@
     banner.textContent = allGood ? '全問正解です。' : '不正解の項目があります。緑色が正しい答えです。';
     banner.classList.add('show', allGood ? 'all-good' : 'has-bad');
     state.checked = true;
+    markSolver();
   }
 
   function renderTypePicker(){
